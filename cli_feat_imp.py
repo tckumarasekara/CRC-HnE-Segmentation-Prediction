@@ -24,7 +24,7 @@ WD = os.path.dirname(__file__)
 @click.option('-c/-nc', '--cuda/--no-cuda', type=bool, default=False, help='Whether to enable cuda or not')
 @click.option('-s/-ns', '--sanitize/--no-sanitize', type=bool, default=False,
               help='Whether to remove model after prediction or not.')
-@click.option('-suf', '--suffix', type=str, help='Path to write the output to')
+@click.option('-suf', '--suffix', type=str, help='Suffix for output files, eg: ".tif" or ".npy"')
 @click.option('-o', '--output', default="", required=True, type=str, help='Path to write the output to')
 @click.option('-f', '--feat', default='_feat.ome.tif', type=str, help='Filename for ggcam features output')
 @click.option('-t', '--target', required=True, type=int,
@@ -62,6 +62,7 @@ def main(input: str, suffix: str, model: str, cuda: bool, output: str, sanitize:
                                     ome_out=ome)
     else:
         file_feature_importance(input, model, target_class, output, ome_out=ome)
+
     if sanitize:
         os.remove(os.path.join(f'{WD}', "models", "models/U_NET.ckpt"))
 
@@ -110,6 +111,7 @@ def features_ggcam(net, data_to_predict, target_class):
 
 
 class agg_segmentation_wrapper_module(nn.Module):
+
     def __init__(self, model):
         super(agg_segmentation_wrapper_module, self).__init__()
         self._model = model
@@ -162,8 +164,10 @@ def write_ome_out(image, classification, out_name) -> None:
 
 
 def get_pytorch_model(path_to_pytorch_model: str, sanitize: bool, architecture: str):
+
     if not _check_exists(path_to_pytorch_model):
         download(architecture)
+
     if architecture == "U-Net":
         model = Unet(len_test_set=128, hparams={}, input_channels=3, num_classes=7, flat_weights=True, dropout_val=True)
         model.apply(weights_init)
@@ -174,10 +178,13 @@ def get_pytorch_model(path_to_pytorch_model: str, sanitize: bool, architecture: 
         state_dict = torch.load("models/CU_NET.ckpt", map_location="cpu")
     else:
         raise KeyError("Architecture not available")
+    
     model.load_state_dict(state_dict["state_dict"], strict=False)
     model.eval()
+
     if sanitize:
         os.remove(path_to_pytorch_model)
+
     return model
 
 
@@ -187,9 +194,11 @@ def _check_exists(filepath) -> bool:
 
 def download(architecture) -> None:
     """Download the model if it doesn't exist in processed_folder already."""
+
     mirrors = [
         'https://zenodo.org/record/',
     ]
+
     if architecture == "U-Net":
         resources = [
             ("U_NET.ckpt", "7884684/files/U_NET.ckpt", "17511a0af673df264179fb93d73c9dd5"),
@@ -200,6 +209,7 @@ def download(architecture) -> None:
         ]
     else:
         raise IOError("No architecture found")
+    
     # download files
     for filename, uniqueID, md5 in resources:
         for mirror in mirrors:

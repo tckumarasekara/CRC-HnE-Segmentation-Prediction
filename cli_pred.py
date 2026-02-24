@@ -21,7 +21,7 @@ WD = os.path.dirname(__file__)
 @click.option('--is-dir', required=False, type=bool, help="Allows iterative predicition")
 @click.option('-c/-nc', '--cuda/--no-cuda', type=bool, default=False, help='Whether to enable cuda or not')
 @click.option('-o', '--output', default="", required=True, type=str, help='Path to write the output to')
-@click.option('-suf', '--suffix', default=".", type=str, help='Path to write the output to')
+@click.option('-suf', '--suffix', default=".", type=str, help='Suffix for output files, eg: ".tif" or ".npy"')
 @click.option('-s/-ns', '--sanitize/--no-sanitize', type=bool, default=False, help='Whether to remove model after '
                                                                                    'prediction or not.')
 @click.option('-m', '--model', type=str, default="models/U_NET.ckpt", help="Path to model")
