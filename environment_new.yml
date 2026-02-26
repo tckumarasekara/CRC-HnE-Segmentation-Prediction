@@ -1,0 +1,22 @@
+name: seg-prediction
+channels:
+  - pytorch
+  - conda-forge
+  - defaults
+dependencies:
+  - python
+  - click
+  - matplotlib
+  - numpy
+  - pandas
+  - rich
+  - tifffile
+  - pytorch
+  - torchvision
+  - captum
+  - pip
+  - pip:
+      - pytorch_lightning
+      - alive_progress
+
+# pip install torch==2.1.1 torchvision==0.16.1 torchaudio==2.5.1 --index-url https://download.pytorch.org/whl/cu121

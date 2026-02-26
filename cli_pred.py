@@ -45,7 +45,7 @@ def main(input: str, suffix: str, cuda: bool, output: str, ome: bool, is_dir: bo
         result = predict(image, model)
         if ome:
             write_ome_out(image, result, input.split("/")[-1])
-        write_results(result.detach().numpy(), output)
+        write_results(result.detach().cpu().numpy(), output)
 
 
 def read_data_to_predict(path_to_data_to_predict: str):
@@ -95,10 +95,11 @@ def download(architecture) -> None:
             break
         else:
             raise RuntimeError("Error downloading {}".format(filename))
-    print('Done!')
+    print('Downloaded!')
 
 
 def write_results(predictions: np.ndarray, path_to_write_to: str) -> None:
+    os.makedirs(os.path.dirname(path_to_write_to), exist_ok=True)
     np.save(path_to_write_to, predictions)
 
 
@@ -109,6 +110,7 @@ def write_ome_out(image, classification, out_name) -> None:
     full_image[:, :, 2] = image[2, :, :]
     full_image[:, :, 3] = mask_binning(classification[0, :, :, :])
     full_image = np.transpose(full_image, (2, 0, 1))
+
     with tiff.TiffWriter(os.path.join(".", out_name), bigtiff=True) as tif_file:
         metadata = {"axes": "CYX",
                     'Channel': {"Name": ["red", "green", "blue", "mask"]}}
@@ -116,26 +118,38 @@ def write_ome_out(image, classification, out_name) -> None:
 
 
 def mask_binning(classification: torch.Tensor):
-    classification = classification.detach().numpy()
+    classification = classification.detach().cpu().numpy()
     classification = np.argmax(classification, axis=0)
     return classification
 
 
-def get_pytorch_model(path_to_pytorch_model: str, sanitize: bool, architecture: str):
+def get_pytorch_model(path_to_pytorch_model: str, sanitize: bool, architecture: str, is_loaded=False):
+
     if not _check_exists(path_to_pytorch_model):
         download(architecture)
-    if architecture == "U-Net":
+    else:
         model = Unet(hparams={}, input_channels=3, num_classes=7, flat_weights=True, dropout_val=True)
         model.apply(weights_init)
-        state_dict = torch.load("models/U_NET.ckpt", map_location="cpu")
-    elif architecture == "CU-Net":
-        model = ContextUnet(hparams={}, input_channels=3, num_classes=7, flat_weights=True, dropout_val=True)
-        model.apply(weights_init)
-        state_dict = torch.load("models/CU_NET.ckpt", map_location="cpu")
-    else:
-        raise KeyError("Architecture not available")
+        state_dict = torch.load(path_to_pytorch_model, map_location="cpu")
+        is_loaded = True
+
+    if not is_loaded:
+        if architecture == "U-Net":
+            model = Unet(hparams={}, input_channels=3, num_classes=7, flat_weights=True, dropout_val=True)
+            model.apply(weights_init)
+            state_dict = torch.load("models/U_NET.ckpt", map_location="cpu")
+            path_to_pytorch_model = "models/U_NET.ckpt"
+        elif architecture == "CU-Net":
+            model = ContextUnet(hparams={}, input_channels=3, num_classes=7, flat_weights=True, dropout_val=True)
+            model.apply(weights_init)
+            state_dict = torch.load("models/CU_NET.ckpt", map_location="cpu")
+            path_to_pytorch_model = "models/CU_NET.ckpt"
+        else:
+            raise KeyError("Architecture not available")
+        
     model.load_state_dict(state_dict["state_dict"], strict=False)
     model.eval()
+
     if sanitize:
         os.remove(path_to_pytorch_model)
     return model
@@ -147,6 +161,10 @@ def predict(data_to_predict, model):
     imgs.append(img)
     imgs = np.asarray(imgs, dtype=np.float32)
     img_tensor = torch.from_numpy(imgs)
+
+    device = next(model.parameters()).device  # get model device
+    img_tensor = img_tensor.to(device)
+
     prediction = model(img_tensor)
     return prediction
 

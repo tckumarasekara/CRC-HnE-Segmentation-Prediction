@@ -1,10 +1,13 @@
 import multiprocessing
+import os
 
 import numpy as np
+import pandas as pd
 import cli_pred as cp
 import tifffile as tiff
 import glob
 from multiprocessing import Process
+
 
 class PQCalculator:
     def __init__(self, ids):
@@ -15,10 +18,13 @@ class PQCalculator:
     def calc_cod(self, cl):
         res = []
         lab = []
+
+        CD = os.path.dirname(os.path.abspath(__file__))
+        patch_names = pd.read_csv(os.path.join(os.path.dirname(CD), "CRC-HnE-Segmentation-Training", "histology_segmentation_training", "data", "patches", "patch_info.csv"))
+
         for val in self.ids:
-            image, label = cp.read_data_to_predict(glob.glob(
-                "../histology_segmentation_training/histology_segmentation_training/data/OME-TIFFs/*")[val])
-            model = cp.get_pytorch_model("models/CU_NET.ckpt", False)
+            image, label = cp.read_data_to_predict(os.path.join(os.path.dirname(CD), "CRC-HnE-Segmentation-Training", "histology_segmentation_training", "data", "OME-TIFFs", patch_names.iloc[val, 0] + ".ome.tif"))
+            model = cp.get_pytorch_model("models/U_NET.ckpt", False)
             result = cp.predict(image, model)
             result = np.argmax(result.detach().numpy(), axis=1)
             label = label[16:240, 16:240]
@@ -33,15 +39,50 @@ class PQCalculator:
             lab.append(len(np.unique(self.nb_4_tiles(label))))
         return res, lab
 
+
+
+    def calc_sem_iou(gt, mask, num_classes=None, ignore_index=None):
+        ious = {}
+
+        classes = np.unique(gt)
+
+        if ignore_index is not None:
+            classes = classes[classes != ignore_index]
+
+        for c in classes:
+            gt_c = (gt == c)
+            pred_c = (mask == c)
+
+            intersection = np.logical_and(gt_c, pred_c).sum()
+            union = np.logical_or(gt_c, pred_c).sum()
+
+            iou = intersection / union if union > 0 else 0
+
+            ious[c] = iou
+
+        if len(ious) > 0:
+            mean_iou = np.mean(list(ious.values()))
+        else:
+            mean_iou = 0.0
+
+        return ious, mean_iou
+
+
+
     def calc_PQ(self, cl):
         with multiprocessing.Manager() as manager:
             qL = manager.list()
-            mL = manager.list()
+            mL_ins = manager.list()
+            mL_seg = manager.list()
+
+            CD = os.path.dirname(os.path.abspath(__file__))
+            patch_names = pd.read_csv(os.path.join(os.path.dirname(CD), "CRC-HnE-Segmentation-Training", "histology_segmentation_training", "data", "patches", "patch_info.csv"))
+
             for val in range(0, self.length - 4, 4):
-                p1 = Process(target=self.process_pipeline, args=(val, self.ids[val], cl, qL, mL))
-                p2 = Process(target=self.process_pipeline, args=(val + 1, self.ids[val + 1], cl, qL, mL))
-                p3 = Process(target=self.process_pipeline, args=(val + 2, self.ids[val + 2], cl, qL, mL))
-                p4 = Process(target=self.process_pipeline, args=(val + 3, self.ids[val + 3], cl, qL, mL))
+                p1 = Process(target=self.process_pipeline, args=(os.path.join(os.path.dirname(CD), "CRC-HnE-Segmentation-Training", "histology_segmentation_training", "data", "OME-TIFFs", patch_names.iloc[val, 0] + ".ome.tif"), self.ids[val], cl, qL, mL_ins, mL_seg))
+                p2 = Process(target=self.process_pipeline, args=(os.path.join(os.path.dirname(CD), "CRC-HnE-Segmentation-Training", "histology_segmentation_training", "data", "OME-TIFFs", patch_names.iloc[val + 1, 0] + ".ome.tif"), self.ids[val + 1], cl, qL, mL_ins, mL_seg))
+                p3 = Process(target=self.process_pipeline, args=(os.path.join(os.path.dirname(CD), "CRC-HnE-Segmentation-Training", "histology_segmentation_training", "data", "OME-TIFFs", patch_names.iloc[val + 2, 0] + ".ome.tif"), self.ids[val + 2], cl, qL, mL_ins, mL_seg))
+                p4 = Process(target=self.process_pipeline, args=(os.path.join(os.path.dirname(CD), "CRC-HnE-Segmentation-Training", "histology_segmentation_training", "data", "OME-TIFFs", patch_names.iloc[val + 3, 0] + ".ome.tif"), self.ids[val + 3], cl, qL, mL_ins, mL_seg))
                 p1.start()
                 p2.start()
                 p3.start()
@@ -51,9 +92,11 @@ class PQCalculator:
                 p3.join()
                 p4.join()
             qual = list(qL)
-            mets = list(mL)
+            mets = list(mL_ins)
+            segs = list(mL_seg)
         self.qs = np.array(qual)
         self.mets = np.array(mets)
+        self.segs = np.array(segs)
 
     def load_image(self, path, mask: bool):
         data = tiff.imread(path)
@@ -63,26 +106,31 @@ class PQCalculator:
             return label
         return image, label
 
-    def process_pipeline(self, iD, val, cl, qL, mL):
-        image, label = cp.read_data_to_predict(glob.glob(
-            "../histology_segmentation_training/histology_segmentation_training/data/OME-TIFFs/*")[iD])
-        model = cp.get_pytorch_model("CU_NET.ckpt", False)
+    def process_pipeline(self, iD, val, cl, qL, ml_ins, ml_seg):
+        image, label = cp.read_data_to_predict(iD)
+        model = cp.get_pytorch_model("U_NET.ckpt", False, "U-Net")
         result = cp.predict(image, model)
         result = np.argmax(result.detach().numpy(), axis=1)
+
         if cl > 0:
             mask = result == cl
             result = mask * result
             mask = label == cl
             label = mask * label
         print("Currently working on {}".format(val))
-        metrics = self.intersection_two_instances(self.nb_4_tiles(label), self.nb_4_tiles(result))
+
+        ins_metrics = self.intersection_two_instances(self.nb_4_tiles(label), self.nb_4_tiles(result))
+        sem_metrics = self.calc_sem_iou(label, result, ignore_index=0)
+
         try:
-            sq = metrics[2] / metrics[0]
-            rq = metrics[0] / (metrics[0] + 0.5 * metrics[1] + 0.5 * metrics[3])
+            sq = ins_metrics[2] / ins_metrics[0]
+            rq = ins_metrics[0] / (ins_metrics[0] + 0.5 * ins_metrics[1] + 0.5 * ins_metrics[3])
         except:
             sq = 0
             rq = 0
-        mL.append(metrics)
+
+        ml_ins.append(ins_metrics)
+        ml_seg.append(sem_metrics)
         qL.append([sq, rq])
 
     def union(self, x, y):
@@ -133,32 +181,46 @@ class PQCalculator:
         tp = 0
         fp = 0
         tp_ious = 0
-        fns = list(np.unique(ground_truth))
-        for value in np.unique(ground_truth)[1:]:
-            for salue in np.unique(mask)[1:]:
-                bool_val = ground_truth == value
-                bool_sal = mask == salue
-                intersection = np.logical_and(bool_val, bool_sal)
-                if not intersection.sum() > 0:
-                    continue
-                else:
-                    intersection = intersection.sum()
-                    union = np.logical_or(bool_val, bool_sal)
-                    union = union.sum()
-                    if intersection / union > 0.5:
-                        tp += 1
-                        tp_ious += (intersection / union)
-                        if value in fns:
-                            fns.remove(value)
-                    elif intersection / union > 1:
-                        print(intersection)
-                        print(union)
-                        continue
-                    else:
-                        fp += 1
-                        if value in fns:
-                            fns.remove(value)
+        
+        gt_instances = list(np.unique(ground_truth))[1:]
+        pred_instances = list(np.unique(mask))[1:]
+
+        matched_preds = set()  
+        fns = set(gt_instances)  
+
+        for gt_val in gt_instances:
+            gt_mask = ground_truth == gt_val
+            best_iou = 0
+            best_pred = None
+
+            # find the predicted instance with highest IoU
+            for pred_val in pred_instances:
+                if pred_val in matched_preds:
+                    continue  # already matched predictions
+
+                pred_mask = mask == pred_val
+                intersection = np.logical_and(gt_mask, pred_mask).sum()
+                union = np.logical_or(gt_mask, pred_mask).sum()
+                iou = intersection / union if union > 0 else 0
+
+                if iou > best_iou:
+                    best_iou = iou
+                    best_pred = pred_val
+
+            # evaluate the best match
+            if best_iou >= 0.5:  
+                tp += 1
+                tp_ious += best_iou
+                matched_preds.add(best_pred)
+                fns.discard(gt_val)  # remove matched ground truth val
+            else:
+                # no good match
+                continue
+
+        # unmatched predictions as FP
+        fp = len(set(pred_instances) - matched_preds)
         return tp, fp, tp_ious, len(fns)
+
 
 
 if __name__ == '__main__':
@@ -212,4 +274,5 @@ if __name__ == '__main__':
     #    np.save("lab_{}".format(i), np.array(lab))
         pqc.calc_PQ(i)
         np.save("qualities_c_{}".format(i), pqc.qs)
-        np.save("metrics_c_{}".format(i), pqc.mets)
+        np.save("metrics_ins_c_{}".format(i), pqc.mets)
+        np.save("metrics_segs_c_{}".format(i), pqc.segs)
