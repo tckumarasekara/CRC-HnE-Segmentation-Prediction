@@ -18,5 +18,7 @@ dependencies:
   - pip:
       - pytorch_lightning
       - alive_progress
+      - monai==1.5.2
+      - einops==0.8.2
 
 # pip install torch==2.1.1 torchvision==0.16.1 torchaudio==2.5.1 --index-url https://download.pytorch.org/whl/cu121

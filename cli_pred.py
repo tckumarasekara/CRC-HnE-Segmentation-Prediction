@@ -9,7 +9,8 @@ import sys
 import tifffile as tiff
 import torch
 from rich import traceback
-from model.unet_instance import Unet, ContextUnet
+sys.modules.pop("model.unet_instance")
+from model.unet_instance import Unet, ContextUnet, UneXt, swinUNETR
 from utils import weights_init
 import glob
 
@@ -126,12 +127,23 @@ def mask_binning(classification: torch.Tensor):
 def get_pytorch_model(path_to_pytorch_model: str, sanitize: bool, architecture: str, is_loaded=False):
 
     if not _check_exists(path_to_pytorch_model):
+        print("Model not found at {}.".format(path_to_pytorch_model))
         download(architecture)
     else:
-        model = Unet(hparams={}, input_channels=3, num_classes=7, flat_weights=True, dropout_val=True)
+        if architecture == "U-Net":
+            model = Unet(hparams={}, input_channels=3, num_classes=7, flat_weights=False, dropout_val=True)
+            print("U-Net model loaded from {}".format(path_to_pytorch_model))
+        elif architecture == "U-NeXt":
+            model = UneXt(hparams={}, input_channels=3, num_classes=7, flat_weights=True, dropout_val=True)
+            print("U-NeXt model loaded from {}".format(path_to_pytorch_model))
+        elif architecture == "swin-UNETR":
+            model = swinUNETR(hparams={}, input_channels=3, num_classes=7, flat_weights=False, dropout_val=True)
+            print("Swin-UNETR model loaded from {}".format(path_to_pytorch_model))
         model.apply(weights_init)
         state_dict = torch.load(path_to_pytorch_model, map_location="cpu")
         is_loaded = True
+        #print("Model loaded from {}".format(path_to_pytorch_model))
+        
 
     if not is_loaded:
         if architecture == "U-Net":
@@ -139,11 +151,13 @@ def get_pytorch_model(path_to_pytorch_model: str, sanitize: bool, architecture: 
             model.apply(weights_init)
             state_dict = torch.load("models/U_NET.ckpt", map_location="cpu")
             path_to_pytorch_model = "models/U_NET.ckpt"
+            print("U-Net model loaded from zenodo")
         elif architecture == "CU-Net":
             model = ContextUnet(hparams={}, input_channels=3, num_classes=7, flat_weights=True, dropout_val=True)
             model.apply(weights_init)
             state_dict = torch.load("models/CU_NET.ckpt", map_location="cpu")
             path_to_pytorch_model = "models/CU_NET.ckpt"
+            print("CU-Net model loaded from zenodo")
         else:
             raise KeyError("Architecture not available")
         

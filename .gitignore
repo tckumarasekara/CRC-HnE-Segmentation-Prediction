@@ -1,5 +1,7 @@
 # output files
 out/
 *ome.tif
+*.ckpt
+*.npy
 
 models/
