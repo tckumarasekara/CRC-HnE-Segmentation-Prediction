@@ -25,10 +25,11 @@ class UnetSuper(pl.LightningModule):
         else:
             self.weights = [0.5, 1, 1, 1, 1, 1, 1]
 
-        if kwargs["loss"] == "FocalLoss":
-            self.criterion = FocalLoss(apply_nonlin=None, alpha=self.weights, gamma=2.0)
-        else:
-            self.criterion = Cyclical_FocalLoss()
+        #if kwargs["loss"] == "FocalLoss":
+        #    self.criterion = FocalLoss(apply_nonlin=None, alpha=self.weights, gamma=2.0)
+        #else:
+        #    self.criterion = Cyclical_FocalLoss()
+        self.criterion = FocalLoss(apply_nonlin=None, alpha=self.weights, gamma=2.0)
 
         self.dice_criterion = DiceLoss()
         self.dice_criterion.cuda()

@@ -9,7 +9,7 @@ import sys
 import tifffile as tiff
 import torch
 from rich import traceback
-sys.modules.pop("model.unet_instance")
+#sys.modules.pop("model.unet_instance")
 from model.unet_instance import Unet, ContextUnet, UneXt, swinUNETR
 from utils import weights_init
 import glob
